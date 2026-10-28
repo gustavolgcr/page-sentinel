@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Page Sentinel</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <div class="grid" aria-hidden="true"></div>
+
+    <header>
+      <div>
+        <h1>Page Sentinel</h1>
+        <p class="subtitle">// site monitoring system</p>
+      </div>
+      <button id="test-sound" class="ghost" type="button">Test sound</button>
+    </header>
+
+    <form id="add-form">
+      <label class="field-label" for="url">Address</label>
+      <input id="url" type="text" placeholder="https://site-to-watch.com" spellcheck="false" required>
+      <div class="row">
+        <label class="interval">
+          Every
+          <input id="interval" type="number" min="1" step="1" value="5" required>
+          min
+        </label>
+        <button type="submit" class="primary">Watch</button>
+      </div>
+      <p id="form-error" class="error" hidden></p>
+    </form>
+
+    <ul id="list"></ul>
+    <div id="empty" class="empty">
+      <p>No programs running</p>
+      <p class="eol">END OF LINE</p>
+    </div>
+
+    <template id="item-template">
+      <li class="item">
+        <div class="item-head">
+          <a class="url" target="_blank"></a>
+          <span class="status"></span>
+        </div>
+        <div class="meta"></div>
+        <div class="change" hidden>
+          <div class="change-title"></div>
+          <ul class="added"></ul>
+          <ul class="removed"></ul>
+        </div>
+        <div class="error item-error" hidden></div>
+        <div class="actions">
+          <button class="ack primary alert" type="button" hidden>Got it</button>
+          <button class="check" type="button">Check</button>
+          <button class="toggle" type="button"></button>
+          <label class="interval-edit">
+            <input class="interval-input" type="number" min="1" step="1"> min
+          </label>
+          <span class="secondary">
+            <button class="reset ghost" type="button" title="Use the current page as the new baseline">Reset</button>
+            <button class="remove ghost danger" type="button">Remove</button>
+          </span>
+        </div>
+      </li>
+    </template>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
