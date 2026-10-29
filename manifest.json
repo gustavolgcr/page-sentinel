@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Sentinel",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Checks websites on a schedule and plays a sound when their content changes.",
   "permissions": [
     "alarms",

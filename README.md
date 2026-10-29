@@ -29,6 +29,7 @@ Existing page-monitoring extensions tend to do too much or cost money. This one 
 - Works on sites that build their content with JavaScript.
 - Never opens tabs while checking.
 - Shows which lines were added and removed.
+- Confirms every change with a second read before alerting.
 - Alerts with a soft retro synth arpeggio, a system notification and a counter on the icon.
 - Checks overdue sites right away when the computer wakes up or Chrome starts.
 - Everything stays in your browser. No data is sent anywhere.
@@ -66,6 +67,7 @@ Other buttons: **Check** (check now), **Pause/Resume**, change the interval righ
 - **No tabs:** the page is loaded inside a hidden page that belongs to the extension. The site's JavaScript runs normally, so it also works on single-page apps. For sites that forbid being embedded, the extension lifts that restriction only for its own checks. If that still fails, it falls back to a background tab and the item shows "using a tab".
 - **What is compared:** only the page text, including collapsed sections. Layout, script or image changes don't trigger an alert.
 - **Sleep or Chrome closed:** sites and baselines are saved. When Chrome opens or the computer is unlocked, every overdue site is checked right away.
+- **No false alarms from half-loaded pages:** when a page looks different, it is read again 15 seconds later. The alert only fires if the change is still there, so a slow or failing server doesn't trigger it.
 - **Errors** (offline, site down): never count as a change. The extension retries in 1 minute, up to 3 times, then goes back to the normal interval.
 
 ## Memory use

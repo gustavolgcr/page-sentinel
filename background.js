@@ -14,6 +14,7 @@ const TEXT_QUIET_MS = 3000;
 const MAX_DIFF_LINES = 30;
 const MAX_RETRIES = 3;               // extra attempts after an error, 1 min apart
 const OFFSCREEN_IDLE_MS = 20000;     // close the hidden page after this idle time
+const CONFIRM_DELAY_MS = 15000;      // wait before re-reading a page that seems changed
 
 // ---------- storage ----------
 
@@ -171,6 +172,13 @@ async function runCheck(id) {
   let method;
   try {
     ({ text, method } = await readPage(site.url));
+    const hasBaseline = site.lastText != null && site.textVersion === TEXT_VERSION;
+    if (hasBaseline && text !== site.lastText) {
+      // Looks like a change. Read again before alerting, so a page that
+      // loaded halfway (slow or failing server) doesn't cause a false alarm.
+      await new Promise((resolve) => setTimeout(resolve, CONFIRM_DELAY_MS));
+      ({ text, method } = await readPage(site.url));
+    }
   } catch (e) {
     const retry = await updateSite(id, (s) => {
       s.status = 'error';

@@ -31,6 +31,7 @@ FEATURES
 • Pause, resume, check now and change the interval at any time.
 • Checks overdue sites right away when the computer wakes up or Chrome starts.
 • Ignores invisible changes (scripts, layout); only the text is compared.
+• Confirms each change with a second read, so a page that loads halfway doesn't cause a false alarm.
 • Lightweight: memory is only used for the few seconds of each check.
 
 PRIVACY
