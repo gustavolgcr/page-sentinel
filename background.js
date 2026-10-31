@@ -9,12 +9,15 @@ const RETRY_PREFIX = 'retry:';
 const TEXT_VERSION = 2;              // bump when the way text is read changes
 const FRAME_TIMEOUT_MS = 40000;      // max time for a tab-less read
 const PAGE_LOAD_TIMEOUT_MS = 45000;  // fallback: max time for the tab to load
-const TEXT_MAX_WAIT_MS = 20000;
+const TEXT_MAX_WAIT_MS = 30000;
 const TEXT_QUIET_MS = 3000;
 const MAX_DIFF_LINES = 30;
 const MAX_RETRIES = 3;               // extra attempts after an error, 1 min apart
 const OFFSCREEN_IDLE_MS = 20000;     // close the hidden page after this idle time
 const CONFIRM_DELAY_MS = 15000;      // wait before re-reading a page that seems changed
+const LOG_MAX = 50;                  // check history kept per site
+const LOG_TEXTS_MAX = 10;            // of those, how many keep the full page text
+const LOADING_LINE = /^(loading|carregando|cargando|aguarde|please wait)\b.{0,30}$/i;
 
 // ---------- storage ----------
 
@@ -168,29 +171,53 @@ async function runCheck(id) {
 
   await updateSite(id, (s) => { s.status = 'checking'; });
 
+  const hasBaseline = site.lastText != null && site.textVersion === TEXT_VERSION;
+  const log = { at: Date.now(), reads: [] };
+  const read = async () => {
+    const started = Date.now();
+    try {
+      const result = await readPage(site.url);
+      log.reads.push({ ...describeRead(result.text), method: result.method, loading: result.loading, ms: Date.now() - started, text: result.text });
+      return result;
+    } catch (e) {
+      log.reads.push({ ms: Date.now() - started, error: String((e && e.message) || e) });
+      throw e;
+    }
+  };
+
   let text;
   let method;
   try {
-    ({ text, method } = await readPage(site.url));
-    const hasBaseline = site.lastText != null && site.textVersion === TEXT_VERSION;
-    if (hasBaseline && text !== site.lastText) {
+    let result = await read();
+    if (hasBaseline && result.text !== site.lastText) {
       // Looks like a change. Read again before alerting, so a page that
       // loaded halfway (slow or failing server) doesn't cause a false alarm.
       await new Promise((resolve) => setTimeout(resolve, CONFIRM_DELAY_MS));
-      ({ text, method } = await readPage(site.url));
+      result = await read();
     }
+    // Still showing "Loading..." after waiting: treat it as an error, unless
+    // the page always shows that message (it is in the saved version too, or
+    // it kept showing it through every retry).
+    const alwaysLoading = (hasBaseline && isLoadingText(site.lastText)) || (site.errorStreak || 0) >= MAX_RETRIES;
+    if (result.loading && result.text !== site.lastText && !alwaysLoading) {
+      throw new Error('The page was still loading.');
+    }
+    ({ text, method } = result);
   } catch (e) {
+    const error = String((e && e.message) || e);
     const retry = await updateSite(id, (s) => {
       s.status = 'error';
-      s.lastError = String((e && e.message) || e);
+      s.lastError = error;
       s.lastCheck = Date.now();
       s.errorStreak = (s.errorStreak || 0) + 1;
       return s.active && s.intervalMin > 1 && s.errorStreak <= MAX_RETRIES;
     });
     if (retry) chrome.alarms.create(RETRY_PREFIX + id, { delayInMinutes: 1 });
+    await saveLog(id, { ...log, outcome: 'error', error }, site.lastText);
     return;
   }
 
+  let outcome;
   const changed = await updateSite(id, (s) => {
     s.lastCheck = Date.now();
     s.lastError = null;
@@ -201,20 +228,63 @@ async function runCheck(id) {
       // First read (or a read in a new format): becomes the baseline.
       s.lastText = text;
       s.textVersion = TEXT_VERSION;
+      outcome = 'baseline';
       return false;
     }
-    if (s.lastText === text) return false;
+    if (s.lastText === text) {
+      outcome = log.reads.length > 1 ? 'change not confirmed' : 'no change';
+      return false;
+    }
     const { added, removed } = diffLines(s.lastText, text);
     s.lastText = text;
     s.unseen = true;
     s.lastChange = { at: Date.now(), added, removed };
+    outcome = 'change';
     return true;
   });
+  if (outcome) await saveLog(id, { ...log, outcome }, site.lastText);
 
   if (changed) {
     const updated = (await getSites())[id];
     if (updated) await alertChange(updated);
   }
+}
+
+function isLoadingText(text) {
+  return String(text || '').split('\n').some((line) => LOADING_LINE.test(line));
+}
+
+function describeRead(text) {
+  return { lines: text.split('\n').length, chars: text.length, hash: hashText(text) };
+}
+
+// Short fingerprint, so log entries can be compared at a glance.
+function hashText(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// ---------- check history (log) ----------
+// Kept under its own key ("log:<id>") so the popup doesn't load it every time.
+// The full page text is only kept when it differs from the saved version,
+// and only for the most recent entries.
+
+async function saveLog(id, entry, baseline) {
+  for (const r of entry.reads) {
+    if (r.text === baseline) delete r.text;
+  }
+  const key = 'log:' + id;
+  const { [key]: log = [] } = await chrome.storage.local.get(key);
+  log.push(entry);
+  log.splice(0, Math.max(0, log.length - LOG_MAX));
+  let withText = 0;
+  for (let i = log.length - 1; i >= 0; i--) {
+    for (const r of log[i].reads || []) {
+      if (r.text != null && ++withText > LOG_TEXTS_MAX) delete r.text;
+    }
+  }
+  await chrome.storage.local.set({ [key]: log });
 }
 
 // Line-by-line comparison: what appeared and what disappeared.
@@ -228,11 +298,12 @@ function diffLines(oldText, newText) {
 }
 
 // Try without a tab; if that fails, use a background tab.
+// Returns { text, loading, method }.
 async function readPage(url) {
   try {
-    const text = await readViaFrame(url);
+    const { text, loading } = await readViaFrame(url);
     if (!text) throw new Error('The page loaded without any text.');
-    return { text, method: 'frame' };
+    return { text, loading, method: 'frame' };
   } catch (frameError) {
     // Site down or no internet: opening a tab won't help.
     try {
@@ -241,8 +312,8 @@ async function readPage(url) {
       throw new Error('Could not reach the site (offline or wrong address).');
     }
     console.warn('Tab-less read failed, using a tab:', frameError);
-    const text = await readViaTab(url);
-    return { text, method: 'tab' };
+    const { text, loading } = await readViaTab(url);
+    return { text, loading, method: 'tab' };
   }
 }
 
@@ -256,7 +327,7 @@ async function readViaFrame(url) {
       timeoutMs: FRAME_TIMEOUT_MS,
     });
     if (!res || !res.ok) throw new Error((res && res.error) || 'No response from the hidden page.');
-    return res.text;
+    return { text: res.text, loading: !!res.loading };
   } finally {
     scheduleOffscreenClose();
   }
@@ -286,9 +357,9 @@ async function readViaTab(url) {
       func: (maxWait, quiet) => globalThis.__pageSentinelExtract(maxWait, quiet),
       args: [TEXT_MAX_WAIT_MS, TEXT_QUIET_MS],
     });
-    const text = injection && injection.result;
-    if (!text) throw new Error('The page loaded without any text.');
-    return text;
+    const result = injection && injection.result;
+    if (!result || !result.text) throw new Error('The page loaded without any text.');
+    return result;
   } finally {
     if (windowId != null) chrome.windows.remove(windowId).catch(() => {});
     else if (tabId != null) chrome.tabs.remove(tabId).catch(() => {});
@@ -451,6 +522,7 @@ const handlers = {
 
   async remove({ id }) {
     await updateSites((all) => { delete all[id]; });
+    await chrome.storage.local.remove('log:' + id);
     await chrome.alarms.clear(alarmName(id));
     await chrome.alarms.clear(RETRY_PREFIX + id);
     chrome.notifications.clear(alarmName(id));
@@ -488,6 +560,21 @@ const handlers = {
   async testSound() {
     await playSound();
   },
+
+  // Everything needed to understand a site's recent checks, for download.
+  async getLog({ id }) {
+    const site = (await getSites())[id];
+    if (!site) throw new Error('Site not found.');
+    const key = 'log:' + id;
+    const { [key]: log = [] } = await chrome.storage.local.get(key);
+    const { lastText, ...info } = site;
+    return {
+      extension: chrome.runtime.getManifest().version,
+      exportedAt: new Date().toISOString(),
+      site: { ...info, savedVersion: lastText != null ? { ...describeRead(lastText), text: lastText } : null },
+      checks: log.map((e) => ({ ...e, at: new Date(e.at).toISOString() })),
+    };
+  },
 };
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -495,7 +582,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const handler = handlers[msg.type];
   if (!handler) return false;
   handler(msg)
-    .then(() => sendResponse({ ok: true }))
+    .then((data) => sendResponse({ ok: true, data }))
     .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
   return true; // async response
 });

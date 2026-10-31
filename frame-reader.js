@@ -3,12 +3,19 @@
 // the extension itself). On any other page it does nothing.
 
 (() => {
-  const MAX_WAIT_MS = 20000; // max time waiting for the content to settle
+  const MAX_WAIT_MS = 30000; // max time waiting for the content to settle
   const QUIET_MS = 3000;     // the text must stay still for this long
 
-  // Waits for the page to stop changing and returns its text, one line per
-  // text fragment. Skips scripts and styles. It doesn't depend on the page
-  // being visible, so it gives the same result in the hidden page and in a tab.
+  // A short line like "Loading...", "Carregando dados" or "Please wait" means
+  // the page is still fetching its content.
+  const LOADING_LINE = /^(loading|carregando|cargando|aguarde|please wait)\b.{0,30}$/i;
+  const isLoading = (text) => text.split('\n').some((line) => LOADING_LINE.test(line));
+
+  // Waits for the page to stop changing (and to stop showing a loading
+  // message) and returns { text, loading }: its text, one line per text
+  // fragment, and whether a loading message was still there at the end.
+  // Skips scripts and styles. It doesn't depend on the page being visible,
+  // so it gives the same result in the hidden page and in a tab.
   function extractStableText(maxWaitMs, quietMs) {
     const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'OBJECT']);
     const read = () => {
@@ -35,12 +42,17 @@
         observer.disconnect();
         clearTimeout(quietTimer);
         clearTimeout(maxTimer);
-        resolve(read());
+        const text = read();
+        resolve({ text, loading: isLoading(text) });
       };
       // Every change on the page restarts the "quiet" countdown.
       const arm = () => {
         clearTimeout(quietTimer);
-        quietTimer = setTimeout(() => (read() ? finish() : arm()), quietMs);
+        quietTimer = setTimeout(() => {
+          const text = read();
+          if (text && !isLoading(text)) finish();
+          else arm();
+        }, quietMs);
       };
       const observer = new MutationObserver(arm);
       observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
@@ -61,7 +73,7 @@
   if (globalThis.__pageSentinelSent) return;
   globalThis.__pageSentinelSent = true;
 
-  extractStableText(MAX_WAIT_MS, QUIET_MS).then((text) => {
-    chrome.runtime.sendMessage({ target: 'offscreen', type: 'frameText', token, text }).catch(() => {});
+  extractStableText(MAX_WAIT_MS, QUIET_MS).then(({ text, loading }) => {
+    chrome.runtime.sendMessage({ target: 'offscreen', type: 'frameText', token, text, loading }).catch(() => {});
   });
 })();

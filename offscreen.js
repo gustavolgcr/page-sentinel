@@ -15,13 +15,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'frameText') {
     const done = pending.get(msg.token);
-    if (done) done(msg.text);
+    if (done) done({ text: msg.text, loading: !!msg.loading });
     return false;
   }
 
   if (msg.type === 'scrape') {
     scrape(msg.url, msg.timeoutMs)
-      .then((text) => sendResponse({ ok: true, text }))
+      .then(({ text, loading }) => sendResponse({ ok: true, text, loading }))
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true; // async response
   }
@@ -37,15 +37,15 @@ function scrape(url, timeoutMs) {
     iframe.style.cssText = 'width:1280px;height:2000px;border:0';
 
     const timer = setTimeout(() => finish(new Error('The page did not respond in time.')), timeoutMs);
-    function finish(err, text) {
+    function finish(err, result) {
       clearTimeout(timer);
       pending.delete(token);
       iframe.remove();
       if (err) reject(err);
-      else resolve(text);
+      else resolve(result);
     }
 
-    pending.set(token, (text) => finish(null, text));
+    pending.set(token, (result) => finish(null, result));
     iframe.src = url;
     document.body.appendChild(iframe);
   });

@@ -29,7 +29,8 @@ Existing page-monitoring extensions tend to do too much or cost money. This one 
 - Works on sites that build their content with JavaScript.
 - Never opens tabs while checking.
 - Shows which lines were added and removed.
-- Confirms every change with a second read before alerting.
+- Waits for "Loading..." screens to finish and confirms every change with a second read before alerting.
+- Keeps a history of recent checks that you can download to investigate an unexpected alert.
 - Alerts with a soft retro synth arpeggio, a system notification and a counter on the icon.
 - Checks overdue sites right away when the computer wakes up or Chrome starts.
 - Everything stays in your browser. No data is sent anywhere.
@@ -55,7 +56,7 @@ After editing any file (or pulling a new version), go back to `chrome://extensio
    - appears in the popup with the added (+) and removed (−) lines.
 4. Click **Got it** to clear the alert.
 
-Other buttons: **Check** (check now), **Pause/Resume**, change the interval right in its field, **Reset** (use the current page as the new baseline) and **Remove**. Use **Test sound** at the top to check the volume.
+Other buttons: **Check** (check now), **Pause/Resume**, change the interval right in its field, **Log** (download the history of recent checks as a .json file), **Reset** (use the current page as the new baseline) and **Remove**. Use **Test sound** at the top to check the volume.
 
 ### Sites for testing
 
@@ -67,7 +68,8 @@ Other buttons: **Check** (check now), **Pause/Resume**, change the interval righ
 - **No tabs:** the page is loaded inside a hidden page that belongs to the extension. The site's JavaScript runs normally, so it also works on single-page apps. For sites that forbid being embedded, the extension lifts that restriction only for its own checks. If that still fails, it falls back to a background tab and the item shows "using a tab".
 - **What is compared:** only the page text, including collapsed sections. Layout, script or image changes don't trigger an alert.
 - **Sleep or Chrome closed:** sites and baselines are saved. When Chrome opens or the computer is unlocked, every overdue site is checked right away.
-- **No false alarms from half-loaded pages:** when a page looks different, it is read again 15 seconds later. The alert only fires if the change is still there, so a slow or failing server doesn't trigger it.
+- **No false alarms from half-loaded pages:** the text is only read after the page has been still for 3 seconds and no longer shows a short loading message such as "Loading..." or "Carregando dados" (up to 30 seconds). If it is still loading after that, the check counts as an error, not a change. And when a page looks different, it is read again 15 seconds later: the alert only fires if the change is still there.
+- **Log:** the last 50 checks of each site are kept, with how long each read took and how much text it found. The full page text is kept for the 10 most recent reads that differed from the saved version. The **Log** button downloads it all as a .json file.
 - **Errors** (offline, site down): never count as a change. The extension retries in 1 minute, up to 3 times, then goes back to the normal interval.
 
 ## Memory use
@@ -79,7 +81,7 @@ Measured on Chrome 156 (macOS), watching a JavaScript-heavy page:
 | Between checks | Nearly zero. The background worker sleeps, and the hidden page is closed 20 s after each check. |
 | During a check (a few seconds) | About 100 MB for the site being loaded, the same as opening it in a tab. Released right after. |
 | On every page you browse | Negligible. The text reader checks whether it's inside the extension's hidden page and exits immediately. |
-| Saved data | About 30 KB per watched page. |
+| Saved data | About 30 KB per watched page, plus up to about 300 KB of check history. |
 
 ## Limitations
 

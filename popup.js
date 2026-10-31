@@ -10,6 +10,19 @@ function send(type, data = {}) {
   });
 }
 
+// Saves the site's check history as a .json file.
+async function downloadLog(site) {
+  const { data } = await send('getLog', { id: site.id });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const host = new URL(site.url).hostname.replace(/[^a-z0-9.-]/gi, '_');
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `page-sentinel-log-${host}-${stamp}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
 function timeAgo(ts) {
   if (!ts) return 'never';
   const s = Math.round((Date.now() - ts) / 1000);
@@ -92,6 +105,8 @@ function renderSite(site) {
     send('setInterval', { id: site.id, intervalMin: intervalInput.value })
       .catch((e) => alert(e.message));
   });
+
+  node.querySelector('.log').addEventListener('click', () => downloadLog(site).catch((e) => alert(e.message)));
 
   node.querySelector('.reset').addEventListener('click', () => send('resetBaseline', { id: site.id }));
 

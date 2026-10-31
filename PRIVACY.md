@@ -1,6 +1,6 @@
 # Privacy policy — Page Sentinel
 
-Last updated: October 28, 2026.
+Last updated: October 31, 2026.
 
 ## Summary
 
@@ -12,7 +12,8 @@ Only in Chrome's local storage (`chrome.storage.local`), on your computer:
 
 - the addresses of the sites you asked it to watch and the interval for each one;
 - the text of the latest version of each site, used to detect changes;
-- the time of the last check and the lines that changed.
+- the time of the last check and the lines that changed;
+- a history of the last 50 checks of each site (times, results and, for the most recent ones that differed, the page text), used only by the **Log** button, which saves it as a file on your computer.
 
 This data never leaves your computer and is deleted when you remove the site or uninstall the extension.
 
